@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tikistirici",
+  "productName": "Cendere",
   "version": "0.1.0",
-  "identifier": "dev.tikistirici.desktop",
+  "identifier": "dev.cendere.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -11,16 +11,27 @@
   },
   "app": {
     "windows": [
-      { "title": "Tikistirici", "width": 1280, "height": 820, "minWidth": 980, "minHeight": 600 }
+      {
+        "title": "Cendere",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 600
+      }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'",
-      "assetProtocol": { "enable": true, "scope": [] }
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

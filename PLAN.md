@@ -1,4 +1,4 @@
-# Tikistirici: PNG optimizer
+# Cendere: PNG optimizer
 
 Desktop app (Windows, macOS, Linux) that optimizes PNG files and overwrites them in place.
 
