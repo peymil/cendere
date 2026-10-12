@@ -4,9 +4,171 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cendere</title>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <header class="topbar">
+      <div class="brand">Cendere</div>
+      <form id="address" class="addressbar">
+        <input id="dir" type="text" placeholder="Folder path, e.g. /Users/you/Pictures" spellcheck="false" />
+        <button id="browse" type="button">Browse</button>
+        <button id="scan" type="submit" class="primary">Scan</button>
+      </form>
+    </header>
+
+    <div class="layout">
+      <aside class="options">
+        <h2>Options</h2>
+        <p class="hint">Steps run in this fixed order: lossless, alpha, resize, palette, final lossless.</p>
+
+        <fieldset>
+          <legend><label><input id="ll-enabled" type="checkbox" checked /> 1. Lossless pass (oxipng)</label></legend>
+          <label>Level <select id="ll-level">
+            <option value="0">0 (fastest)</option><option value="1">1</option><option value="2" selected>2 (default)</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6 (slowest)</option>
+          </select></label>
+          <label><input id="ll-strip" type="checkbox" checked /> Strip metadata (keeps color profile)</label>
+          <label><input id="ll-interlace" type="checkbox" checked /> Remove interlacing</label>
+          <label><input id="ll-zopfli" type="checkbox" /> Zopfli (slow, smaller)</label>
+        </fieldset>
+
+        <fieldset>
+          <legend><label><input id="al-enabled" type="checkbox" /> 2. Clear faded alpha</label></legend>
+          <label>Transparent at or below <input id="al-low" type="number" min="0" max="254" value="8" /></label>
+          <label>Opaque at or above <input id="al-high" type="number" min="1" max="255" value="247" /></label>
+        </fieldset>
+
+        <fieldset>
+          <legend><label><input id="rs-enabled" type="checkbox" /> 3. Resize</label></legend>
+          <label>Mode <select id="rs-mode">
+            <option value="scale">Scale (original = 4x)</option>
+            <option value="custom">Custom W x H</option>
+          </select></label>
+          <div id="rs-scale-row" class="row">
+            <label>Scale <select id="rs-scale">
+              <option value="1">1x (25%)</option><option value="2" selected>2x (50%)</option>
+              <option value="3">3x (75%)</option><option value="4">4x (100%)</option>
+            </select></label>
+          </div>
+          <div id="rs-custom-row" class="row hidden">
+            <label>Width <input id="rs-w" type="number" min="1" max="20000" value="1024" /></label>
+            <label>Height <input id="rs-h" type="number" min="1" max="20000" value="1024" /></label>
+            <label><input id="rs-aspect" type="checkbox" checked /> Keep aspect (fit inside box)</label>
+          </div>
+          <label>Filter <select id="rs-filter">
+            <option value="lanczos3" selected>Lanczos3 (sharp)</option>
+            <option value="nearest">Nearest (pixel art)</option>
+          </select></label>
+        </fieldset>
+
+        <fieldset>
+          <legend><label><input id="pl-enabled" type="checkbox" checked /> 4. Color palette reduction</label></legend>
+          <label>Colors <select id="pl-mode">
+            <option value="auto" selected>Auto (smallest with quality 50-85)</option>
+            <option value="fixed">Fixed count</option>
+          </select></label>
+          <div id="pl-fixed-row" class="row hidden">
+            <label>Count (2-256) <input id="pl-colors" type="number" min="2" max="256" value="256" /></label>
+          </div>
+          <label><input id="pl-dither" type="checkbox" /> Dithering</label>
+        </fieldset>
+
+        <p id="stale-note" class="warning hidden">Options changed. Run Process again before Apply.</p>
+        <button id="process" class="primary wide" disabled>Process</button>
+        <button id="cancel" class="wide hidden">Cancel</button>
+        <div class="progress hidden" id="progress-wrap"><div id="progress-bar"></div></div>
+      </aside>
+
+      <main class="list-pane">
+        <div class="toolbar">
+          <span id="count">No folder scanned</span>
+          <span class="spacer"></span>
+          <button id="select-all" disabled>Select all</button>
+          <button id="select-none" disabled>Select none</button>
+          <button id="check-ready" disabled>Check all results</button>
+          <button id="uncheck-all" disabled>Uncheck all results</button>
+          <button id="remove-unchecked" disabled>Remove unchecked results</button>
+          <button id="apply" class="primary" disabled>Apply</button>
+        </div>
+        <div class="table-wrap">
+          <table id="files">
+            <thead>
+              <tr>
+                <th class="c-proc" title="Include in Process">Process</th>
+                <th class="c-thumb">Preview</th>
+                <th>Name</th>
+                <th class="num">Original</th>
+                <th class="num">Result</th>
+                <th class="c-status">Status</th>
+                <th class="c-apply" title="Apply this result to the original file">Apply</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </main>
+
+      <aside id="details" class="details hidden">
+        <div class="details-head">
+          <h2 id="d-name"></h2>
+          <button id="d-close" title="Close">×</button>
+        </div>
+        <p id="d-path" class="path"></p>
+        <p id="d-note" class="note hidden"></p>
+        <button id="d-remove" class="hidden">Remove this result</button>
+        <div id="d-compare" class="compare hidden">
+          <div class="compare-stage" id="cmp-stage">
+            <img id="cmp-before" alt="original" draggable="false" />
+            <img id="cmp-after" alt="result" draggable="false" />
+            <div id="cmp-line"></div>
+          </div>
+          <div class="compare-help">Left: original · Right: result · Drag the line · Wheel to zoom · Double-click to reset</div>
+        </div>
+
+        <section>
+          <h3>Compression</h3>
+          <div id="d-size"></div>
+          <canvas id="c-size" class="chart short"></canvas>
+        </section>
+
+        <section>
+          <h3>Image</h3>
+          <table class="kv" id="d-info"></table>
+        </section>
+
+        <section>
+          <h3>Color palette</h3>
+          <div id="d-palette-meta" class="meta"></div>
+          <div id="d-top"></div>
+        </section>
+
+        <section>
+          <h3>Alpha</h3>
+          <div id="d-alpha-meta" class="meta"></div>
+          <canvas id="c-alpha" class="chart short"></canvas>
+        </section>
+
+        <section>
+          <h3>Color distribution</h3>
+          <canvas id="c-rgb" class="chart"></canvas>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="statusbar" id="status">Ready</footer>
+
+    <dialog id="confirm">
+      <form method="dialog">
+        <h3>Apply results?</h3>
+        <p id="confirm-text"></p>
+        <p class="warning">Original files will be overwritten. This cannot be undone.</p>
+        <menu>
+          <button value="cancel">Cancel</button>
+          <button id="confirm-ok" value="ok" class="primary">Apply</button>
+        </menu>
+      </form>
+    </dialog>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
