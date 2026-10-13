@@ -83,6 +83,7 @@
         <div class="toolbar">
           <span id="count">No folder scanned</span>
           <span class="spacer"></span>
+          <button id="show-all" disabled title="Show every scanned file, not only processed ones">Show all files</button>
           <button id="select-all" disabled>Select all</button>
           <button id="select-none" disabled>Select none</button>
           <button id="check-ready" disabled>Check all results</button>
@@ -96,10 +97,10 @@
               <tr>
                 <th class="c-proc" title="Include in Process">Process</th>
                 <th class="c-thumb">Preview</th>
-                <th>Name</th>
-                <th class="num">Original</th>
-                <th class="num">Result</th>
-                <th class="c-status">Status</th>
+                <th class="sortable" data-sort="name" title="Sort by name">Name</th>
+                <th class="num sortable" data-sort="size" title="Sort by original size">Original</th>
+                <th class="num sortable" data-sort="result" title="Sort by result size">Result</th>
+                <th class="c-status sortable" data-sort="status" title="Sort by status">Status</th>
                 <th class="c-apply" title="Apply this result to the original file">Apply</th>
               </tr>
             </thead>
@@ -109,49 +110,58 @@
       </main>
 
       <aside id="details" class="details hidden">
-        <div class="details-head">
-          <h2 id="d-name"></h2>
-          <button id="d-close" title="Close">×</button>
-        </div>
-        <p id="d-path" class="path"></p>
-        <p id="d-note" class="note hidden"></p>
-        <button id="d-remove" class="hidden">Remove this result</button>
-        <div id="d-compare" class="compare hidden">
-          <div class="compare-stage" id="cmp-stage">
-            <img id="cmp-before" alt="original" draggable="false" />
-            <img id="cmp-after" alt="result" draggable="false" />
-            <div id="cmp-line"></div>
+        <header class="details-head">
+          <div class="details-title">
+            <h2 id="d-name"></h2>
+            <p id="d-path" class="path"></p>
           </div>
-          <div class="compare-help">Left: original · Right: result · Drag the line · Wheel to zoom · Double-click to reset</div>
+          <button id="d-remove" class="hidden">Remove this result</button>
+          <button id="d-close" title="Close (Esc)">Close</button>
+        </header>
+        <p id="d-note" class="note hidden"></p>
+        <div class="details-body">
+          <div class="details-main">
+            <div id="d-compare" class="compare hidden">
+              <div class="compare-stage" id="cmp-stage">
+                <img id="cmp-before" alt="original" draggable="false" />
+                <img id="cmp-after" alt="result" draggable="false" />
+                <div id="cmp-line"></div>
+              </div>
+              <div class="compare-help">Left: original · Right: result · Drag the line · Wheel to zoom · Drag to pan · Double-click to reset</div>
+            </div>
+            <p id="d-nocompare" class="nocompare hidden"></p>
+          </div>
+
+          <div class="details-side">
+            <section>
+              <h3>Compression</h3>
+              <div id="d-size"></div>
+              <canvas id="c-size" class="chart short"></canvas>
+            </section>
+
+            <section>
+              <h3>Image</h3>
+              <table class="kv" id="d-info"></table>
+            </section>
+
+            <section>
+              <h3>Color palette</h3>
+              <div id="d-palette-meta" class="meta"></div>
+              <div id="d-top"></div>
+            </section>
+
+            <section>
+              <h3>Alpha</h3>
+              <div id="d-alpha-meta" class="meta"></div>
+              <canvas id="c-alpha" class="chart short"></canvas>
+            </section>
+
+            <section>
+              <h3>Color distribution</h3>
+              <canvas id="c-rgb" class="chart"></canvas>
+            </section>
+          </div>
         </div>
-
-        <section>
-          <h3>Compression</h3>
-          <div id="d-size"></div>
-          <canvas id="c-size" class="chart short"></canvas>
-        </section>
-
-        <section>
-          <h3>Image</h3>
-          <table class="kv" id="d-info"></table>
-        </section>
-
-        <section>
-          <h3>Color palette</h3>
-          <div id="d-palette-meta" class="meta"></div>
-          <div id="d-top"></div>
-        </section>
-
-        <section>
-          <h3>Alpha</h3>
-          <div id="d-alpha-meta" class="meta"></div>
-          <canvas id="c-alpha" class="chart short"></canvas>
-        </section>
-
-        <section>
-          <h3>Color distribution</h3>
-          <canvas id="c-rgb" class="chart"></canvas>
-        </section>
       </aside>
     </div>
 

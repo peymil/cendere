@@ -23,20 +23,16 @@ pub fn run(input: &[u8], opts: &Options) -> Result<Output> {
     }
 
     let mut notes = Vec::new();
-    let data = if opts.lossless.enabled {
-        lossless(input, &opts.lossless)?
-    } else {
-        input.to_vec()
-    };
-
     let (target_w, target_h) = opts.target_size(info.width, info.height);
     let resized = (target_w, target_h) != (info.width, info.height);
     let pixel_work = opts.alpha.enabled || resized || opts.palette.enabled;
     if !pixel_work {
-        return Ok(Output { bytes: data, resized: false, notes });
+        let bytes = if opts.lossless.enabled { lossless(input, &opts.lossless)? } else { input.to_vec() };
+        return Ok(Output { bytes, resized: false, notes });
     }
 
-    let mut img = png_io::decode_rgba(&data)?;
+    // Pixel steps re-encode the image anyway, so a lossless pass on the input would be wasted work.
+    let mut img = png_io::decode_rgba(input)?;
     if opts.alpha.enabled {
         alpha_cleanup(&mut img.data, &opts.alpha);
     }

@@ -31,6 +31,9 @@ const state = {
   busy: false,
   stale: false,
   selected: null as string | null,
+  // Paths shown in the list. null = all scanned files; set to the processed files after Process.
+  listFilter: null as Set<string> | null,
+  sort: null as { key: SortKey; dir: "asc" | "desc" } | null,
   thumbs: new Map<string, string>(),
   thumbEls: new Map<string, HTMLImageElement>(),
   analyses: new Map<string, Analysis>(),
@@ -143,6 +146,68 @@ function processableRows(): ScanItem[] {
   return state.rows.filter((r) => !r.skipReason);
 }
 
+function visibleRows(): ScanItem[] {
+  const filter = state.listFilter;
+  return filter ? state.rows.filter((r) => filter.has(r.path)) : state.rows;
+}
+
+// ---------- sorting ----------
+
+type SortKey = "name" | "size" | "result" | "status";
+
+const STATUS_RANK: Record<string, number> = { ready: 0, noGain: 1, failed: 2, none: 3, skip: 4 };
+
+// null = no value; such rows always sort last, whatever the direction.
+function sortValue(row: ScanItem, key: SortKey): string | number | null {
+  const item = state.items.get(row.path);
+  switch (key) {
+    case "name":
+      return row.name;
+    case "size":
+      return row.size;
+    case "result":
+      return item && item.status !== "failed" ? item.resultSize : null;
+    case "status":
+      if (row.skipReason) return STATUS_RANK.skip;
+      if (!item) return STATUS_RANK.none;
+      return STATUS_RANK[item.status] ?? STATUS_RANK.failed;
+  }
+}
+
+function displayRows(): ScanItem[] {
+  const rows = visibleRows();
+  const sort = state.sort;
+  if (!sort) return rows;
+  const dir = sort.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const ka = sortValue(a, sort.key);
+    const kb = sortValue(b, sort.key);
+    if (ka === null || kb === null) {
+      if (ka === kb) return a.name.localeCompare(b.name);
+      return ka === null ? 1 : -1;
+    }
+    const c = typeof ka === "string" && typeof kb === "string" ? ka.localeCompare(kb) : (ka as number) - (kb as number);
+    return c !== 0 ? c * dir : a.name.localeCompare(b.name);
+  });
+}
+
+// Click cycles: ascending, descending, unsorted.
+function toggleSort(key: SortKey): void {
+  const cur = state.sort;
+  if (!cur || cur.key !== key) state.sort = { key, dir: "asc" };
+  else if (cur.dir === "asc") state.sort = { key, dir: "desc" };
+  else state.sort = null;
+  renderRows();
+}
+
+function updateSortHeaders(): void {
+  document.querySelectorAll<HTMLElement>("#files th[data-sort]").forEach((th) => {
+    const active = state.sort?.key === th.dataset.sort;
+    th.classList.toggle("sorted", active && state.sort?.dir === "asc");
+    th.classList.toggle("sorted-desc", active && state.sort?.dir === "desc");
+  });
+}
+
 function updateButtons(): void {
   const hasRows = state.rows.length > 0;
   const error = optionError(readOptions());
@@ -152,6 +217,7 @@ function updateButtons(): void {
 
   $<HTMLButtonElement>("process").disabled = state.running || state.busy || !hasRows || includedCount === 0 || error !== null;
   $("process").textContent = state.items.size > 0 ? "Process again" : "Process";
+  $<HTMLButtonElement>("show-all").disabled = state.listFilter === null || state.running;
   $("cancel").classList.toggle("hidden", !state.running);
   $("progress-wrap").classList.toggle("hidden", !state.running);
   $("stale-note").classList.toggle("hidden", !state.stale);
@@ -161,8 +227,9 @@ function updateButtons(): void {
   $<HTMLButtonElement>("select-none").disabled = !hasRows || state.running;
   $<HTMLButtonElement>("check-ready").disabled = readyPaths.length === 0 || state.running;
   $<HTMLButtonElement>("uncheck-all").disabled = readyPaths.length === 0 || state.running;
+  const shown = state.listFilter ? `${visibleRows().length} processed shown · ` : "";
   $("count").textContent = hasRows
-    ? `${state.rows.length} PNG files · ${includedCount} selected for Process · ${state.items.size} results`
+    ? `${shown}${state.rows.length} PNG files · ${includedCount} selected for Process · ${state.items.size} results`
     : "No folder scanned";
   if (error && hasRows) setStatus(error, "error");
 }
@@ -229,7 +296,8 @@ function renderRows(): void {
   const tbody = $("rows");
   tbody.innerHTML = "";
   state.thumbEls.clear();
-  for (const row of state.rows) {
+  updateSortHeaders();
+  for (const row of displayRows()) {
     const item = state.items.get(row.path);
     const tr = document.createElement("tr");
     tr.dataset.path = row.path;
@@ -301,6 +369,7 @@ async function scan(): Promise<void> {
     state.applyChecked.clear();
     state.stale = false;
     state.selected = null;
+    state.listFilter = null;
     $("details").classList.add("hidden");
     state.rows = await api.scanDir(dir);
     state.included = new Set(processableRows().map((r) => r.path));
@@ -344,6 +413,8 @@ async function startProcess(): Promise<void> {
   state.stale = false;
   state.selected = null;
   $("details").classList.add("hidden");
+  state.listFilter = new Set(paths);
+  renderRows();
   setProgress(0, paths.length);
   updateButtons();
   try {
@@ -370,6 +441,7 @@ async function loadJob(): Promise<void> {
 async function onProcessFinished(done: ProcessFinished): Promise<void> {
   state.running = false;
   await loadJob();
+  state.listFilter = state.items.size > 0 ? new Set(state.items.keys()) : null;
   state.applyChecked = new Set(
     [...state.items.values()].filter((i) => i.status === "ready").map((i) => i.path),
   );
@@ -385,6 +457,7 @@ async function removeResults(paths: string[]): Promise<void> {
   for (const p of paths) {
     state.items.delete(p);
     state.applyChecked.delete(p);
+    state.listFilter?.delete(p);
   }
   renderRows();
   if (state.selected && paths.includes(state.selected)) void selectFile(state.selected);
@@ -438,6 +511,7 @@ async function scanQuiet(): Promise<void> {
     state.included = new Set(processableRows().map((r) => r.path));
     state.thumbs.clear();
     state.analyses.clear();
+    state.listFilter = null;
     state.selected = null;
     $("details").classList.add("hidden");
   } catch (e) {
@@ -473,12 +547,20 @@ async function selectFile(path: string): Promise<void> {
   $<HTMLButtonElement>("d-remove").classList.toggle("hidden", !item);
 
   const compareBox = $("d-compare");
+  const noCompare = $("d-nocompare");
   if (item?.status === "ready" && item.stagedPath) {
     compareBox.classList.remove("hidden");
+    noCompare.classList.add("hidden");
     const [before, after] = await Promise.all([api.imageDataUrl(path), api.imageDataUrl(item.stagedPath)]);
     if (state.selected === path) compare.setImages(before, after);
   } else {
     compareBox.classList.add("hidden");
+    noCompare.textContent = !item
+      ? "Not processed yet. Press Process to see the result here."
+      : item.status === "failed"
+        ? "Processing failed. See the note above."
+        : "No gain: the original is kept, so there is nothing to compare.";
+    noCompare.classList.remove("hidden");
   }
 
   renderSizeSummary(row.size, item);
@@ -582,6 +664,12 @@ function renderRgb(a: Analysis): void {
   ]);
 }
 
+function closeDetails(): void {
+  state.selected = null;
+  markSelectedRow();
+  $("details").classList.add("hidden");
+}
+
 // ---------- wiring ----------
 
 async function init(): Promise<void> {
@@ -596,12 +684,19 @@ async function init(): Promise<void> {
   $("process").addEventListener("click", () => void startProcess());
   $("cancel").addEventListener("click", () => void api.cancelProcess());
   $("apply").addEventListener("click", () => void applyChecked());
+  document.querySelectorAll<HTMLElement>("#files th[data-sort]").forEach((th) =>
+    th.addEventListener("click", () => toggleSort(th.dataset.sort as SortKey)),
+  );
+  $("show-all").addEventListener("click", () => {
+    state.listFilter = null;
+    renderRows();
+  });
   $("select-all").addEventListener("click", () => {
-    processableRows().forEach((r) => state.included.add(r.path));
+    visibleRows().filter((r) => !r.skipReason).forEach((r) => state.included.add(r.path));
     renderRows();
   });
   $("select-none").addEventListener("click", () => {
-    state.included.clear();
+    visibleRows().forEach((r) => state.included.delete(r.path));
     renderRows();
   });
   $("check-ready").addEventListener("click", () => {
@@ -619,22 +714,23 @@ async function init(): Promise<void> {
   $("d-remove").addEventListener("click", () => {
     if (state.selected) void removeResults([state.selected]);
   });
-  $("d-close").addEventListener("click", () => {
-    state.selected = null;
-    markSelectedRow();
-    $("details").classList.add("hidden");
-  });
+  $("d-close").addEventListener("click", closeDetails);
   $("rows").addEventListener("click", onRowsClick);
 
   document.addEventListener("keydown", (ev) => {
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
+    if (ev.key === "Escape" && !$("details").classList.contains("hidden")) {
+      closeDetails();
+      return;
+    }
     if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
-    if (state.rows.length === 0) return;
-    const idx = state.rows.findIndex((r) => r.path === state.selected);
-    const next = ev.key === "ArrowDown" ? Math.min(state.rows.length - 1, idx + 1) : Math.max(0, idx - 1);
+    const rows = displayRows();
+    if (rows.length === 0) return;
+    const idx = rows.findIndex((r) => r.path === state.selected);
+    const next = ev.key === "ArrowDown" ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx - 1);
     ev.preventDefault();
-    void selectFile(state.rows[next].path);
-    document.querySelector<HTMLElement>(`#rows tr[data-path="${CSS.escape(state.rows[next].path)}"]`)?.scrollIntoView({ block: "nearest" });
+    void selectFile(rows[next].path);
+    document.querySelector<HTMLElement>(`#rows tr[data-path="${CSS.escape(rows[next].path)}"]`)?.scrollIntoView({ block: "nearest" });
   });
 
   window.addEventListener("resize", () => {
