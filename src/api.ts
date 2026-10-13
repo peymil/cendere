@@ -45,6 +45,12 @@ export interface Analysis {
   greenHistogram: number[];
   blueHistogram: number[];
   topColors: ColorCount[];
+  chunkSizes: ChunkSize[];
+}
+
+export interface ChunkSize {
+  kind: string;
+  bytes: number;
 }
 
 export type ItemStatus = "ready" | "noGain" | "failed";

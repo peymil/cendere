@@ -4,13 +4,14 @@ import {
   api,
   type Analysis,
   type ApplyReport,
+  type ChunkSize,
   type JobItem,
   type Options,
   type ProcessFinished,
   type ProcessProgress,
   type ScanItem,
 } from "./api";
-import { compact, drawBars, drawHistogram } from "./charts";
+import { compact, drawBars, drawHistogram, drawPie, type Slice } from "./charts";
 import { Compare } from "./compare";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -34,6 +35,8 @@ const state = {
   // Paths shown in the list. null = all scanned files; set to the processed files after Process.
   listFilter: null as Set<string> | null,
   sort: null as { key: SortKey; dir: "asc" | "desc" } | null,
+  // Last row clicked without Shift; the anchor for Shift-click range selection.
+  anchor: null as string | null,
   thumbs: new Map<string, string>(),
   thumbEls: new Map<string, HTMLImageElement>(),
   analyses: new Map<string, Analysis>(),
@@ -325,24 +328,64 @@ function renderRows(): void {
   updateButtons();
 }
 
+function syncRowBoxes(): void {
+  document.querySelectorAll<HTMLTableRowElement>("#rows tr").forEach((tr) => {
+    const path = tr.dataset.path ?? "";
+    const inc = tr.querySelector<HTMLInputElement>("input.inc");
+    if (inc) inc.checked = state.included.has(path);
+    const app = tr.querySelector<HTMLInputElement>("input.app");
+    if (app) app.checked = state.applyChecked.has(path);
+  });
+}
+
+// Paths between two rows in the current display order (inclusive).
+function rangePaths(from: string, to: string): string[] {
+  const order = displayRows().map((r) => r.path);
+  const a = order.indexOf(from);
+  const b = order.indexOf(to);
+  if (a < 0 || b < 0) return [to];
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  return order.slice(lo, hi + 1);
+}
+
 function onRowsClick(ev: MouseEvent): void {
   const target = ev.target as HTMLElement;
   const tr = target.closest("tr");
   const path = tr?.dataset.path;
-  if (!path) return;
-  if (target instanceof HTMLInputElement && target.classList.contains("inc")) {
-    if (target.checked) state.included.add(path);
-    else state.included.delete(path);
+  if (!tr || !path) return;
+
+  // Only clicking the thumbnail shows details.
+  if (target.closest(".thumb")) {
+    void selectFile(path);
+    return;
+  }
+
+  // Apply column toggles the Apply checkbox.
+  if (target.closest(".c-apply")) {
+    const app = tr.querySelector<HTMLInputElement>("input.app");
+    if (!app || app.disabled) return;
+    if (state.applyChecked.has(path)) state.applyChecked.delete(path);
+    else state.applyChecked.add(path);
+    syncRowBoxes();
     updateButtons();
     return;
   }
-  if (target instanceof HTMLInputElement && target.classList.contains("app")) {
-    if (target.checked) state.applyChecked.add(path);
-    else state.applyChecked.delete(path);
-    updateButtons();
-    return;
+
+  // Anywhere else in the row toggles Process. Shift applies the clicked state to the range from the anchor.
+  const row = state.rows.find((r) => r.path === path);
+  if (!row || row.skipReason || state.running) return;
+  const on = !state.included.has(path);
+  const extend = ev.shiftKey && state.anchor !== null;
+  const targets = extend ? rangePaths(state.anchor as string, path) : [path];
+  for (const p of targets) {
+    const r = state.rows.find((x) => x.path === p);
+    if (!r || r.skipReason) continue;
+    if (on) state.included.add(p);
+    else state.included.delete(p);
   }
-  selectFile(path);
+  if (!extend) state.anchor = path;
+  syncRowBoxes();
+  updateButtons();
 }
 
 function markSelectedRow(): void {
@@ -573,6 +616,7 @@ async function selectFile(path: string): Promise<void> {
   const result = item?.status === "ready" && item.stagedPath ? await analysisFor(item.stagedPath) : null;
   if (state.selected !== path) return;
   renderInfo(original, result);
+  renderSpace(original, result);
   renderPalette(original);
   renderAlpha(original);
   renderRgb(original);
@@ -619,6 +663,57 @@ function renderInfo(a: Analysis, r: Analysis | null): void {
     rows
       .map(([k, v, rv]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td>${r ? `<td>${rv !== null ? esc(rv) : ""}</td>` : ""}</tr>`)
       .join("");
+}
+
+const PIE_COLORS = ["#2f6fd6", "#2f9e6e", "#c9a227", "#c64545", "#8e5cc6", "#e07b39", "#3aa6b9", "#b05c8a"];
+const OTHER_COLOR = "#8a94a6";
+const PIE_MIN_SHARE = 0.01;
+const CHUNK_LABELS: Record<string, string> = {
+  IDAT: "Pixel data (IDAT)",
+  PLTE: "Palette (PLTE)",
+  tRNS: "Transparency (tRNS)",
+  iCCP: "Color profile (iCCP)",
+  tEXt: "Text (tEXt)",
+  zTXt: "Compressed text (zTXt)",
+  iTXt: "International text (iTXt)",
+  eXIf: "EXIF (eXIf)",
+  Signature: "File signature",
+};
+
+/** One slice per chunk type; types under 1% of the file are merged into "Other". */
+function pieSlices(chunks: ChunkSize[]): Slice[] {
+  const total = chunks.reduce((sum, c) => sum + c.bytes, 0);
+  const sorted = chunks.filter((c) => c.bytes > 0).sort((a, b) => b.bytes - a.bytes);
+  const slices: Slice[] = [];
+  const small: ChunkSize[] = [];
+  for (const c of sorted) {
+    if (total > 0 && c.bytes / total < PIE_MIN_SHARE) small.push(c);
+    else slices.push({ label: CHUNK_LABELS[c.kind] ?? c.kind, value: c.bytes, color: PIE_COLORS[slices.length % PIE_COLORS.length] });
+  }
+  if (small.length > 0) {
+    const value = small.reduce((sum, c) => sum + c.bytes, 0);
+    slices.push({ label: `Other (${small.map((c) => c.kind).join(", ")})`, value, color: OTHER_COLOR });
+  }
+  return slices;
+}
+
+function renderPie(canvasId: string, legendId: string, a: Analysis): void {
+  const slices = pieSlices(a.chunkSizes);
+  drawPie($(canvasId) as HTMLCanvasElement, slices);
+  const total = slices.reduce((sum, s) => sum + s.value, 0) || 1;
+  $(legendId).innerHTML = slices
+    .map(
+      (s) => `<li><span class="swatch" style="background:${s.color}"></span>
+        <span class="pie-label">${esc(s.label)}</span>
+        <span class="cnt">${fmtBytes(s.value)} · ${pct(s.value / total)}</span></li>`,
+    )
+    .join("");
+}
+
+function renderSpace(a: Analysis, r: Analysis | null): void {
+  renderPie("c-pie-orig", "l-pie-orig", a);
+  $("d-pie-result-block").classList.toggle("hidden", !r);
+  if (r) renderPie("c-pie-result", "l-pie-result", r);
 }
 
 function renderPalette(a: Analysis): void {

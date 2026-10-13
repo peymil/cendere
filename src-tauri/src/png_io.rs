@@ -100,6 +100,43 @@ pub fn read_info(bytes: &[u8]) -> Result<PngInfo> {
     })
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkSize {
+    pub kind: String,
+    pub bytes: u64,
+}
+
+/// Bytes used per chunk type, summed over all chunks of that type. Each chunk counts its
+/// 12-byte framing (length, type, CRC) plus its data. The 8-byte signature is listed as
+/// "Signature". Bytes after the IEND chunk or after a truncated chunk are "Trailing data".
+/// The sizes add up to the file length.
+pub fn chunk_sizes(bytes: &[u8]) -> Vec<ChunkSize> {
+    let mut sums: Vec<ChunkSize> = vec![ChunkSize { kind: "Signature".into(), bytes: 8usize.min(bytes.len()) as u64 }];
+    let mut pos = 8usize.min(bytes.len());
+    while pos + 12 <= bytes.len() {
+        let len = be32(&bytes[pos..pos + 4]) as usize;
+        let end = pos.saturating_add(12).saturating_add(len);
+        if end > bytes.len() {
+            break;
+        }
+        let kind = String::from_utf8_lossy(&bytes[pos + 4..pos + 8]).into_owned();
+        let total = (end - pos) as u64;
+        match sums.iter().position(|s| s.kind == kind) {
+            Some(i) => sums[i].bytes += total,
+            None => sums.push(ChunkSize { kind: kind.clone(), bytes: total }),
+        }
+        pos = end;
+        if kind == "IEND" {
+            break;
+        }
+    }
+    if pos < bytes.len() {
+        sums.push(ChunkSize { kind: "Trailing data".into(), bytes: (bytes.len() - pos) as u64 });
+    }
+    sums
+}
+
 pub fn decoded_bytes(width: u32, height: u32) -> u64 {
     width as u64 * height as u64 * 4
 }

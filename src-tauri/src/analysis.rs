@@ -29,6 +29,7 @@ pub struct Analysis {
     pub green_histogram: Vec<u64>,
     pub blue_histogram: Vec<u64>,
     pub top_colors: Vec<ColorCount>,
+    pub chunk_sizes: Vec<png_io::ChunkSize>,
 }
 
 const TOP_COLORS: usize = 12;
@@ -87,6 +88,7 @@ pub fn analyze(path: &Path) -> Result<Analysis> {
         green_histogram: g_h,
         blue_histogram: b_h,
         top_colors,
+        chunk_sizes: png_io::chunk_sizes(&bytes),
     })
 }
 
@@ -112,5 +114,8 @@ mod tests {
         assert_eq!(a.top_colors[0].count, 2);
         assert_eq!(a.top_colors[0].hex, "#FF0000FF");
         assert_eq!(a.red_histogram[255], 2);
+        let total: u64 = a.chunk_sizes.iter().map(|c| c.bytes).sum();
+        assert_eq!(total, a.file_size, "chunk sizes must add up to the file size");
+        assert!(a.chunk_sizes.iter().any(|c| c.kind == "IDAT"));
     }
 }

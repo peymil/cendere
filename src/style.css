@@ -139,7 +139,9 @@ table#files th.sortable { cursor: pointer; user-select: none; white-space: nowra
 table#files th.sortable:hover { color: var(--text); }
 table#files th.sorted::after { content: " \25B2"; font-size: 10px; }
 table#files th.sorted-desc::after { content: " \25BC"; }
+table#files tbody { user-select: none; }
 table#files tbody tr { cursor: pointer; }
+.thumb { cursor: zoom-in; }
 table#files tbody tr:hover { background: rgba(127, 127, 127, .08); }
 table#files tbody tr.selected { background: rgba(47, 111, 214, .16); }
 table#files tbody tr.stale td { opacity: .6; }
@@ -262,6 +264,16 @@ table#files tbody tr.stale td { opacity: .6; }
 
 .chart { display: block; width: 100%; height: 110px; margin-top: 6px; }
 .chart.short { height: 80px; }
+
+.pie-block + .pie-block { margin-top: 10px; }
+.pie-title { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.pie-row { display: flex; align-items: center; gap: 10px; }
+canvas.pie { width: 130px; height: 130px; flex: none; }
+.pie-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; font-size: 11px; }
+.pie-legend li { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.pie-legend .swatch { width: 12px; height: 12px; flex: none; border-radius: 2px; }
+.pie-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pie-legend .cnt { white-space: nowrap; }
 
 table.kv { width: 100%; border-collapse: collapse; }
 table.kv td, table.kv th {

@@ -62,6 +62,37 @@ export function drawHistogram(canvas: HTMLCanvasElement, channels: { values: num
   ctx.globalAlpha = 1;
 }
 
+export interface Slice {
+  label: string;
+  value: number;
+  color: string;
+}
+
+/** Pie chart; slices are drawn clockwise from 12 o'clock. The canvas should be wider than tall. */
+export function drawPie(canvas: HTMLCanvasElement, slices: Slice[]): void {
+  const ctx = sizeCanvas(canvas);
+  if (!ctx) return;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  if (total <= 0) return;
+  const cx = w / 2;
+  const cy = h / 2;
+  const r = Math.max(4, Math.min(w, h) / 2 - 4);
+  let angle = -Math.PI / 2;
+  for (const s of slices) {
+    if (s.value <= 0) continue;
+    const span = (s.value / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + span);
+    ctx.closePath();
+    ctx.fillStyle = s.color;
+    ctx.fill();
+    angle += span;
+  }
+}
+
 export function compact(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
