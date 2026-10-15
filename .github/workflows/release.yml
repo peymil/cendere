@@ -1,12 +1,15 @@
-name: build
+name: release
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  release:
     strategy:
       fail-fast: false
       matrix:
@@ -40,5 +43,13 @@ jobs:
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: Tauri build
-        run: npx tauri build
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Cendere ${{ github.ref_name }}"
+          releaseBody: "See the assets below for installers."
+          releaseDraft: true
+          prerelease: false
